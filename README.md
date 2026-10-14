@@ -21,4 +21,19 @@ checklist for a person.
 You need a Linux machine with a Bluetooth adapter, Python with `bleak`, `jadx`, and the
 vendor's Android APK. Only use it on devices you own.
 
+## Tested against
+
+- **A fake of the worked-example panel**: a BlueZ GATT server on an nRF52840 dongle
+  running Zephyr's `hci_usb`, driven from a laptop's Intel AX210 with bleak 3.0.2.
+  Steps 0–2, 5 and 6, the image path and the step 7 sweep all passed, using the code
+  blocks exactly as written. The fake never drops packets, so it cannot confirm the
+  loss figures.
+- **A third-party LED controller nearby**, read-only: scan, GATT dump, reads, and
+  notify subscriptions.
+- **Steps 3–4 on Nordic's open-source nRF Blinky APK** with jadx 1.5.6. There was no
+  phone, so `adb pull` is untested.
+- **The real panel**: the worked-example numbers were measured on it. The code blocks
+  here match its working driver's framing (checked offline) but have not been run
+  against the panel itself, which was switched off during testing.
+
 License: MIT, see [LICENSE](LICENSE).

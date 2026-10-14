@@ -87,8 +87,11 @@ advertising while a central holds them.
 |---|---|---|
 | Command channel | `write` or `write-without-response` | candidate, confirm in step 4 |
 | Reply channel | `notify` or `indicate` | subscribe before you write anything |
-| Standard | 16-bit SIG UUIDs such as `180f` battery, `180a` device info | just read them |
+| Standard | SIG-assigned: `18xx` services, `2axx`/`2bxx` characteristics (`180f` battery, `180a` device info) | just read them |
 | Firmware update | its own service, touched only by the app's "update" screen; Nordic's is `fe59` | never write |
+
+A short code on the Bluetooth base UUID is not automatically standard: vendors put
+their own channels there too (`ff01`, `e0ad`). Sort those by their properties.
 
 Several write/notify pairs is normal. Do not pick one by trial and error: a device
 can carry a loopback characteristic that echoes every write straight back, which
@@ -104,7 +107,9 @@ adb pull /data/app/.../base.apk      # the path without the package: prefix
 jadx -d out/ base.apk
 ```
 
-No Android phone: download the APK from a mirror site instead.
+No Android phone: download the APK from a mirror site instead. jadx exits non-zero
+("finished with errors") when a few methods fail to decompile; the rest of `out/` is
+still usable.
 
 ### 4. Find the protocol in the code
 
