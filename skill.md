@@ -46,21 +46,27 @@ An nRF52840 dongle that shows up as `1915:521f Open DFU Bootloader` has no firmw
 on it. It is not an adapter and not a sniffer until you flash it. Do not wait on it;
 use the adapter BlueZ lists.
 
+Two adapters listed (say the dongle after you flash it as a controller): bleak does not
+use bluetoothctl's `[default]`, it takes the first powered adapter BlueZ reports, and that
+can change from one run to the next. Pick one for the scripts below with `BLE_ADAPTER=hci0`.
+
 ### 1. Scan
 
 ```python
 # probe.py: no argument = scan, with an address = dump that device's GATT table
-import asyncio, sys
+import asyncio, os, sys
 from bleak import BleakScanner, BleakClient
+
+BLUEZ = {"adapter": os.environ["BLE_ADAPTER"]} if os.environ.get("BLE_ADAPTER") else {}
 
 async def main(addr=None):
     if not addr:
-        found = await BleakScanner.discover(timeout=8, return_adv=True)
+        found = await BleakScanner.discover(timeout=8, return_adv=True, bluez=BLUEZ)
         for dev, adv in sorted(found.values(), key=lambda f: -f[1].rssi):
             print(dev.address, adv.rssi, adv.local_name, adv.service_uuids,
                   {k: v.hex() for k, v in adv.manufacturer_data.items()})
         return
-    async with BleakClient(addr, timeout=30) as c:
+    async with BleakClient(addr, timeout=30, bluez=BLUEZ) as c:
         for svc in c.services:
             print(svc.uuid)
             for ch in svc.characteristics:
@@ -163,9 +169,10 @@ reply) carries over.
 
 ```python
 # session.py: subscribe, handshake, then request/reply. Needs frame.py above.
-import asyncio
+import asyncio, os
 from bleak import BleakClient, BleakScanner
 
+BLUEZ = {"adapter": os.environ["BLE_ADAPTER"]} if os.environ.get("BLE_ADAPTER") else {}
 BASE = "0000{}-0000-1000-8000-00805f9b34fb"
 WRITE, NOTIFY = BASE.format("a0ad"), BASE.format("f0ad")
 MAGIC = b"CCHIP"
@@ -173,8 +180,8 @@ MAGIC = b"CCHIP"
 async def connect(addr):
     # A device BlueZ still holds a stale link to does not advertise, and neither a
     # scan nor connecting by address reaches it: `bluetoothctl disconnect` first.
-    dev = await BleakScanner.find_device_by_address(addr, timeout=15)
-    c = BleakClient(dev or addr, timeout=30)
+    dev = await BleakScanner.find_device_by_address(addr, timeout=15, bluez=BLUEZ)
+    c = BleakClient(dev or addr, timeout=30, bluez=BLUEZ)
     await c.connect()
     rx = asyncio.Queue()
     await c.start_notify(NOTIFY, lambda _, data: rx.put_nowait(parse(bytes(data))))
@@ -211,9 +218,15 @@ checksum and the handshake in one shot. Until you have that reply, send nothing 
 
 `write-without-response` has no delivery guarantee, and cheap firmware drops
 packets when you write too fast. Send a few hundred of the same small command at a
-fixed gap, count how many landed, and repeat with a larger gap until loss reaches
-zero. If the zero-loss rate is too slow for what you want to show, go back to
-step 4.6: the app has a faster path for images.
+fixed gap, each to a different target (a different pixel) so you can count how many
+landed: by eye, from a photo, or from the device's replies if it sends one per
+command. Repeat with a larger gap until loss reaches zero.
+
+bleak returns from a write-without-response as soon as BlueZ has queued it, so a
+loop's own timing says nothing about the radio. End each batch with a read-only
+query and time its reply: it arrives only after every write queued before it. If the
+zero-loss rate is too slow for what you want to show, go back to step 4.6: the app
+has a faster path for images.
 
 ### 8. Wrap it
 
@@ -354,6 +367,8 @@ Not used for the panel above, but the fallbacks in the order to try them:
 | Colours or coordinates scrambled | Field order is whatever the app does | Copy the order from the code; here it is `r, g, b, x, y` |
 | Smooth gradients come out banded | The device's image format has 256 colours | Design for flat colours |
 | Constant you expect is not in the code | It is there in signed decimal | `-96` is `0xA0` |
+| Connects, then drops during service discovery; `journalctl -u bluetooth` says `No agent available` | Something on the device needs an encrypted link, so BlueZ starts pairing and has no agent to answer it | `bluetoothctl`, then `agent on`, `default-agent`, `pair <ADDRESS>` once |
+| Scan or connect uses the wrong adapter | bleak takes the first powered adapter, not bluetoothctl's `[default]` | `BLE_ADAPTER=hci0` (step 0) |
 | Dongle shows as `Open DFU Bootloader` | No application firmware on it | Flash it, or use the built-in adapter |
 | Daemon logs "device not found" forever | The gadget is switched off | Expected; reconnect loop with backoff capped at 30 s |
 | Vendor app can no longer connect | Your daemon is holding the device | Stop the daemon |
